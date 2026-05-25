@@ -1,5 +1,42 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Field of Honour Engine
+
+This repository now includes a TypeScript implementation of the Field of Honour rules engine.
+
+- Engine entrypoint: `lib/field-of-honour/index.ts`
+- Core rules implementation: `lib/field-of-honour/engine.ts`
+- Contract CSV parser/loader: `lib/field-of-honour/contracts.ts`
+- Sheet1 data source used by loader: `data/contracts-sheet1.csv`
+
+### Quick Usage
+
+```ts
+import { FieldOfHonourEngine, loadContractsFromSheet1Csv } from "@/lib/field-of-honour";
+
+const contracts = loadContractsFromSheet1Csv("data/contracts-sheet1.csv");
+
+const engine = new FieldOfHonourEngine({
+	playerIds: ["P1", "P2", "P3"],
+	contracts,
+});
+
+const state = engine.getState();
+// Build round choices from UI/AI/player input.
+// engine.playRound(roundChoices)
+// engine.scoreGame() once end condition is reached.
+```
+
+### Rules Covered
+
+- Setup (bag, initial contracts, awards, starting depots)
+- Round phases: role selection, muster, contract add/draft, campaign, payday
+- Campaign costs, region-change costs, eligibility checks
+- Battle resolution (deaths, wounds, 4/5 typed success, 6 wild success, sacrifice)
+- Role effects: Negotiator, Surgeon, Armourer, Forager, Paymaster, Recruiter, Battle Master, Return All Roles
+- Awards at threshold, loans/debt handling, debt repayment
+- End-game renown scoring including mixed-type set scoring and tie-breaks
+
 ## Getting Started
 
 First, run the development server:
