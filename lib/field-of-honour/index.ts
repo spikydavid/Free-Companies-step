@@ -7,17 +7,25 @@ export {
   giveEquipmentToPlayer,
   returnEquipmentToArmoury,
 } from "./equipment";
+export { runContractSelectionPhase } from "./contract-selection";
+export { runMusterPhase } from "./muster";
+export { runCampaignPhase } from "./campaign";
+export { runPaymentPhase } from "./payment";
 export { createDefaultPlayerKinds, startGame } from "./start-game";
+export { beginRoundRoleSelection, resolveRoundRoleSelections } from "./round";
 export type { TroopDie } from "./bag";
 export type { PopulatedDepotsResult } from "./depots";
 export type { EquipmentResource } from "./equipment";
+export type { ContractSelectionOptions } from "./contract-selection";
+export type { MusterPhaseOptions } from "./muster";
+export type { CampaignPhaseOptions } from "./campaign";
 export type {
   PlayerKind,
   StartGameOptions,
   StartGamePlayer,
   StartGameResult,
 } from "./start-game";
-export { ROLE_PRIORITY, rolePriorityOrder } from "./priorities";
+export { BASE_ROLE_SET, ROLE_PRIORITY, rolePriorityOrder } from "./priorities";
 export {
   buildRoleSelectionHistory,
   toRoundMetricsPoint,

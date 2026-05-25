@@ -1,5 +1,16 @@
 import type { RoleCard } from "./types";
 
+export const BASE_ROLE_SET: RoleCard[] = [
+  "NEGOTIATOR",
+  "SURGEON",
+  "ARMOURER",
+  "FORAGER",
+  "PAYMASTER",
+  "RECRUITER",
+  "BATTLE_MASTER",
+  "RETURN_ALL_ROLES",
+];
+
 export const ROLE_PRIORITY: Record<RoleCard, number> = {
   RETURN_ALL_ROLES: 1,
   NEGOTIATOR: 2,
