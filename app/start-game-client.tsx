@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ROLE_PRIORITY } from "@/lib/field-of-honour/priorities";
 import {
@@ -35,6 +35,65 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
     () => Object.entries(ROLE_PRIORITY).sort((a, b) => a[1] - b[1]),
     [],
   );
+
+  useEffect(() => {
+    if (!started) {
+      return;
+    }
+
+    const allAi = started.players.every((player) => player.kind === "ai");
+    if (!allAi || started.gameEnded) {
+      return;
+    }
+
+    try {
+      let next: StartGameResult | null = null;
+
+      if (started.currentRoundActionOrder.length === 0) {
+        if (started.depots.length < started.players.length) {
+          next = runDepotPhase(started);
+        } else {
+          const selectedRolesByPlayer = resolveRoundRoleSelections(started, roundRoleChoices);
+          next = beginRoundRoleSelection(started, selectedRolesByPlayer);
+        }
+      } else if (Object.keys(started.currentRoundContractsDraftedByPlayer).length === 0) {
+        next = runContractSelectionPhase(started);
+      } else if (Object.keys(started.currentRoundMusterDiceByPlayer).length === 0) {
+        next = runMusterPhase(started);
+      } else if (Object.keys(started.currentRoundCampaignResolutionByPlayer).length === 0) {
+        next = runCampaignPhase(started);
+      } else if (!started.gameEnded) {
+        next = runPaymentPhase(started);
+      }
+
+      if (!next) {
+        return;
+      }
+
+      const timer = window.setTimeout(() => {
+        setError(null);
+        setStarted(next);
+        setRoundRoleChoices(
+          Object.fromEntries(
+            next.players.map((player) => [player.id, player.availableRoles[0] as RoleCard]),
+          ) as Record<string, RoleCard>,
+        );
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timer);
+      };
+    } catch (phaseError) {
+      const timer = window.setTimeout(() => {
+        setError(
+          phaseError instanceof Error ? phaseError.message : "Failed auto phase progression",
+        );
+      }, 0);
+      return () => {
+        window.clearTimeout(timer);
+      };
+    }
+  }, [started, roundRoleChoices]);
 
   function updatePlayerCount(nextCount: number) {
     const clamped = Math.max(2, Math.min(6, nextCount));
@@ -91,8 +150,11 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
 
     setError(null);
     try {
-      const selectedRolesByPlayer = resolveRoundRoleSelections(started, roundRoleChoices);
-      const next = beginRoundRoleSelection(started, selectedRolesByPlayer);
+      const withDepots =
+        started.depots.length < started.players.length ? runDepotPhase(started) : started;
+
+      const selectedRolesByPlayer = resolveRoundRoleSelections(withDepots, roundRoleChoices);
+      const next = beginRoundRoleSelection(withDepots, selectedRolesByPlayer);
       setStarted(next);
       setRoundRoleChoices(
         Object.fromEntries(
@@ -437,7 +499,7 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
                 <ul className="mt-1 list-inside list-disc space-y-1 text-xs text-zinc-700">
                   {started.finalScores.map((score) => (
                     <li key={`score-${score.playerId}`}>
-                      {score.playerId}: total {score.totalRenown} (contracts {score.renownFromContracts}, sets {score.renownFromSets}, awards {score.renownFromAwards})
+                      {score.playerId}: total {score.totalRenown} (contracts {score.renownFromContracts}, sets {score.renownFromSets}, awards {score.renownFromAwards}, troops {score.renownFromTroops})
                     </li>
                   ))}
                 </ul>

@@ -74,7 +74,9 @@ export function computeFinalScores(game: StartGameResult): {
         (sum, award) => sum + award.renown,
         0,
       );
-      const totalRenown = renownFromContracts + renownFromSets + renownFromAwards;
+      const renownFromTroops = Math.floor(player.dice.length / 3);
+      const totalRenown =
+        renownFromContracts + renownFromSets + renownFromAwards + renownFromTroops;
 
       return {
         playerId: player.id,
@@ -82,6 +84,7 @@ export function computeFinalScores(game: StartGameResult): {
         renownFromContracts,
         renownFromSets,
         renownFromAwards,
+        renownFromTroops,
         completedContracts: player.completedContracts.length,
         crowns: player.crowns,
       } satisfies FinalScore;

@@ -62,6 +62,7 @@ export interface FinalScore {
   renownFromContracts: number;
   renownFromSets: number;
   renownFromAwards: number;
+  renownFromTroops: number;
   completedContracts: number;
   crowns: number;
 }
