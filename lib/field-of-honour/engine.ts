@@ -356,13 +356,10 @@ export class FieldOfHonourEngine {
       throw new Error("Manual campaign must include 1 to 3 contracts");
     }
 
-    const selectedContracts = contractIds.map((id) => {
-      const found = this.findQueuedContract(player, id);
-      if (!found) {
-        throw new Error(`${playerId} cannot campaign unknown queued contract ${id}`);
-      }
-      return found;
-    });
+    const selectedContracts = this.resolveQueuedContractsForSelection(player, contractIds);
+    if (selectedContracts.length === 0) {
+      throw new Error(`${playerId} has no valid queued contracts for manual campaign`);
+    }
 
     const campaignCost = this.computeCampaignCost(selectedContracts, false);
     if (player.crowns < campaignCost) {
@@ -980,14 +977,23 @@ export class FieldOfHonourEngine {
       throw new Error(`${player.id} must campaign 1 to 3 contracts`);
     }
 
+    const selectedContracts = this.resolveQueuedContractsForSelection(player, plan.contractIds);
     const activeContracts: Contract[] = [];
-    for (const id of plan.contractIds) {
-      const idx = player.queue.findIndex((contract) => this.contractIdMatches(contract.id, id));
-      if (idx < 0) {
-        throw new Error(`${player.id} cannot campaign unknown queued contract ${id}`);
+
+    for (const contract of selectedContracts) {
+      const idx = this.findQueuedContractIndex(player, contract.id);
+      if (idx >= 0) {
+        activeContracts.push(player.queue[idx]);
+        player.queue.splice(idx, 1);
       }
-      activeContracts.push(player.queue[idx]);
-      player.queue.splice(idx, 1);
+    }
+
+    if (activeContracts.length === 0) {
+      const fallback = player.queue.shift();
+      if (!fallback) {
+        throw new Error(`${player.id} has no queued contracts to campaign`);
+      }
+      activeContracts.push(fallback);
     }
 
     const campaignCost = this.computeCampaignCost(activeContracts, player.roundRoleEffects.forager);
@@ -1799,6 +1805,29 @@ export class FieldOfHonourEngine {
     contractId: string,
   ): number {
     return player.queue.findIndex((contract) => this.contractIdMatches(contract.id, contractId));
+  }
+
+  private resolveQueuedContractsForSelection(
+    player: RuntimePlayerState,
+    requestedContractIds: string[],
+  ): Contract[] {
+    const used = new Set<string>();
+    const selected: Contract[] = [];
+
+    for (const requestedId of requestedContractIds) {
+      const found = player.queue.find(
+        (contract) =>
+          !used.has(contract.id) && this.contractIdMatches(contract.id, requestedId),
+      );
+      if (!found) {
+        continue;
+      }
+
+      used.add(found.id);
+      selected.push(found);
+    }
+
+    return selected;
   }
 
   private contractIdMatches(availableId: string, requestedId: string): boolean {

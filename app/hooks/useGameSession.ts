@@ -34,6 +34,49 @@ interface CampaignPayload {
 
 const createEmptyTroops = (): TroopCounts => ({ melee: 0, ranged: 0, mounted: 0 });
 
+function extractCardNumberFromId(contractId: string): number {
+  return Number.parseInt(contractId.trim().toUpperCase().replace(/^C/, ""), 10);
+}
+
+function resolveSelectedCampaignContracts(
+  selectedIds: string[],
+  queuedContracts: Array<{ id: string; cardNumber: number }>,
+): string[] {
+  const used = new Set<string>();
+  const resolved: string[] = [];
+
+  for (const selectedIdRaw of selectedIds) {
+    const selectedId = selectedIdRaw.trim().toUpperCase();
+    if (!selectedId) {
+      continue;
+    }
+
+    const exact = queuedContracts.find(
+      (contract) => contract.id.toUpperCase() === selectedId && !used.has(contract.id),
+    );
+    if (exact) {
+      used.add(exact.id);
+      resolved.push(exact.id);
+      continue;
+    }
+
+    const selectedCardNumber = extractCardNumberFromId(selectedId);
+    if (!Number.isFinite(selectedCardNumber)) {
+      continue;
+    }
+
+    const fallback = queuedContracts.find(
+      (contract) => contract.cardNumber === selectedCardNumber && !used.has(contract.id),
+    );
+    if (fallback) {
+      used.add(fallback.id);
+      resolved.push(fallback.id);
+    }
+  }
+
+  return resolved;
+}
+
 export function useGameSession() {
   const [playerCount, setPlayerCount] = useState(2);
   const [seed, setSeed] = useState(7);
@@ -261,6 +304,8 @@ export function useGameSession() {
       }
       const active = data.state.players.find((p) => p.id === selectedBattlePlayer);
       setSelectedBattleContract(active?.queue[0]?.id ?? "");
+      setSelectedCampaignContracts([]);
+      setCampaignSendHome(createEmptyTroops());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to confirm manual battle");
     } finally {
@@ -269,7 +314,17 @@ export function useGameSession() {
   }
 
   async function startManualCampaign() {
-    if (!sessionId || !selectedBattlePlayer || selectedCampaignContracts.length === 0) {
+    if (!sessionId || !selectedBattlePlayer) {
+      return;
+    }
+
+    const filteredContractIds = resolveSelectedCampaignContracts(
+      selectedCampaignContracts,
+      selectedPlayerContracts,
+    );
+    if (filteredContractIds.length === 0) {
+      setError("Selected campaign contracts are no longer queued. Please re-select contracts.");
+      setSelectedCampaignContracts([]);
       return;
     }
 
@@ -281,7 +336,7 @@ export function useGameSession() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           playerId: selectedBattlePlayer,
-          contractIds: selectedCampaignContracts,
+          contractIds: filteredContractIds,
         }),
       });
       const data = (await res.json()) as CampaignPayload;

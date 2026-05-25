@@ -38,6 +38,10 @@ export default function Home() {
     selectBattlePlayer,
   } = useGameSession();
 
+  const hasQueuedCampaignSelection = selectedCampaignContracts.some((selectedId) =>
+    selectedPlayerContracts.some((contract) => contract.id === selectedId),
+  );
+
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_0%_0%,#f8d5a5_0%,#f2e8cf_35%,#dbe7c9_70%,#b5d5c5_100%)] px-6 py-8 text-zinc-900">
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -268,7 +272,7 @@ export default function Home() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={startManualCampaign}
-                  disabled={busy || selectedCampaignContracts.length === 0}
+                  disabled={busy || !hasQueuedCampaignSelection}
                   className="rounded-xl bg-violet-700 px-4 py-2 text-xs font-medium text-violet-50 hover:bg-violet-600 disabled:opacity-60"
                 >
                   Start Campaign
