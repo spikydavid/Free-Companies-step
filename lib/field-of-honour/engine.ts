@@ -896,6 +896,7 @@ export class FieldOfHonourEngine {
 
   private addContractsAndDraft(choices: RoundChoices): void {
     this.availableContractsThisRound.length = 0;
+    const negotiatorPlayers: RuntimePlayerState[] = [];
 
     for (const player of this.turnOrder()) {
       const addChoices = choices.contractsAddedByPlayer[player.id];
@@ -909,17 +910,21 @@ export class FieldOfHonourEngine {
       }
 
       if (player.selectedRole === "NEGOTIATOR") {
-        const restrictedA = this.drawContractFromTier("A");
-        const restrictedB = this.drawContractFromTier("B");
-        this.availableContractsThisRound.push({
-          contract: restrictedA,
-          restrictedToPlayerId: player.id,
-        });
-        this.availableContractsThisRound.push({
-          contract: restrictedB,
-          restrictedToPlayerId: player.id,
-        });
+        negotiatorPlayers.push(player);
       }
+    }
+
+    for (const player of negotiatorPlayers) {
+      const restrictedA = this.drawContractFromTier("A");
+      const restrictedB = this.drawContractFromTier("B");
+      this.availableContractsThisRound.push({
+        contract: restrictedA,
+        restrictedToPlayerId: player.id,
+      });
+      this.availableContractsThisRound.push({
+        contract: restrictedB,
+        restrictedToPlayerId: player.id,
+      });
     }
 
     for (const pickNumber of [0, 1] as const) {
