@@ -1,4 +1,3 @@
-import { populateDepots } from "./depots";
 import { giveEquipmentToPlayer } from "./equipment";
 import type { TroopDie } from "./bag";
 import type { StartGameResult } from "./start-game";
@@ -23,15 +22,14 @@ export function runMusterPhase(
   }
 
   const random = options.random ?? Math.random;
-  const populated = populateDepots(game.players.length, game.bag, random);
-  if (populated.depots.length < game.players.length) {
-    throw new Error("Not enough dice in bag to create one depot per player");
+  if (game.depots.length < game.players.length) {
+    throw new Error("Depot phase must complete before muster phase");
   }
 
   let equipment = game.equipment;
-  const workingBag = [...populated.remainingBag];
+  const workingBag = [...game.bag];
   const availableDepotIndices = new Set<number>(
-    populated.depots.map((_, index) => index),
+    game.depots.map((_, index) => index),
   );
 
   const chosenDepotByPlayer: Record<string, TroopDie[]> = {};
@@ -75,7 +73,7 @@ export function runMusterPhase(
         openDepotIndices[Math.floor(random() * openDepotIndices.length)] as number;
     }
 
-    const selectedDepot = populated.depots[selectedDepotIndex];
+    const selectedDepot = game.depots[selectedDepotIndex];
     if (!selectedDepot) {
       throw new Error(`Invalid depot index ${selectedDepotIndex} for ${playerId}`);
     }
@@ -113,7 +111,7 @@ export function runMusterPhase(
     players: updatedPlayers,
     equipment,
     bag: workingBag,
-    depots: populated.depots,
+    depots: [],
     currentRoundMusterDiceByPlayer: chosenDepotByPlayer,
     currentRoundMusterEquipmentByPlayer: gainedEquipmentByPlayer,
   };

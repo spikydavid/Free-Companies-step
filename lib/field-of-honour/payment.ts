@@ -7,6 +7,7 @@ const LOAN_VALUE = 10;
 export interface PaymentPhaseOptions {
   allowWhenGameEnded?: boolean;
   populateNextRoundContractPool?: boolean;
+  advanceToNextRound?: boolean;
 }
 
 function disbandOneUnit(player: StartGameResult["players"][number], bag: StartGameResult["bag"]): boolean {
@@ -61,6 +62,7 @@ export function runPaymentPhase(
 ): StartGameResult {
   const allowWhenGameEnded = options.allowWhenGameEnded ?? false;
   const populateNextRoundContractPool = options.populateNextRoundContractPool ?? true;
+  const advanceToNextRound = options.advanceToNextRound ?? true;
 
   if (game.gameEnded && !allowWhenGameEnded) {
     throw new Error("Game has ended; skip payment phase");
@@ -156,12 +158,50 @@ export function runPaymentPhase(
     }
   }
 
+  let roundNumber = game.roundNumber;
+  let swordBearerId = game.swordBearerId;
+  let startPlayerId = game.startPlayerId;
+
+  if (advanceToNextRound) {
+    const currentSwordBearerIdx = game.seatingOrder.indexOf(game.swordBearerId);
+    if (currentSwordBearerIdx < 0) {
+      throw new Error(`SwordBearer ${game.swordBearerId} is not seated`);
+    }
+
+    const nextSwordBearerIdx = (currentSwordBearerIdx + 1) % game.seatingOrder.length;
+    const nextSwordBearerId = game.seatingOrder[nextSwordBearerIdx];
+    if (!nextSwordBearerId) {
+      throw new Error("Failed to rotate SwordBearer");
+    }
+
+    roundNumber = game.roundNumber + 1;
+    swordBearerId = nextSwordBearerId;
+    startPlayerId = nextSwordBearerId;
+  }
+
+  const playersAfterPayment = updatedPlayers.map((player) => ({
+    ...player,
+    selectedRole: null,
+  }));
+
   return {
     ...game,
-    players: updatedPlayers,
+    roundNumber,
+    swordBearerId,
+    startPlayerId,
+    players: playersAfterPayment,
     bag,
+    depots: [],
     contractDecks,
     discardedContractsByTier,
+    currentRoundRolesSelectedByPlayer: {},
+    currentRoundActionOrder: [],
+    currentRoundContractDraftPool: [],
+    currentRoundContractsDraftedByPlayer: {},
+    currentRoundMusterDiceByPlayer: {},
+    currentRoundMusterEquipmentByPlayer: {},
+    currentRoundCampaignContractsByPlayer: {},
+    currentRoundCampaignResolutionByPlayer: {},
     currentRoundPaymentResolutionByPlayer: paymentResolutionByPlayer,
     nextRoundContractPool,
   };

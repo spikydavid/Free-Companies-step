@@ -560,6 +560,7 @@ export function runCampaignPhase(
     ? runPaymentPhase(campaignCompletedState, {
         allowWhenGameEnded: true,
         populateNextRoundContractPool: false,
+        advanceToNextRound: false,
       })
     : campaignCompletedState;
 

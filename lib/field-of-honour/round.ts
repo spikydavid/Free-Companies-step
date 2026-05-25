@@ -48,6 +48,10 @@ export function beginRoundRoleSelection(
   game: StartGameResult,
   selectedRolesByPlayer: Record<string, RoleCard>,
 ): StartGameResult {
+  if (game.depots.length < game.players.length) {
+    throw new Error("Depot phase must complete before role selection");
+  }
+
   const playersById = new Map(game.players.map((player) => [player.id, player]));
 
   for (const player of game.players) {

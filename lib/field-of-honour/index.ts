@@ -2,6 +2,7 @@ export { loadContractsFromSheet1Csv, parseContractsCsv } from "./contracts";
 export { buildTroopDiceBag } from "./bag";
 export { createAwardsSet, DEFAULT_AWARDS, pickAwardsInPlay } from "./awards";
 export { populateDepots } from "./depots";
+export { runDepotPhase } from "./depot-phase";
 export {
   createEquipmentResource,
   giveEquipmentToPlayer,
@@ -15,6 +16,7 @@ export { createDefaultPlayerKinds, startGame } from "./start-game";
 export { beginRoundRoleSelection, resolveRoundRoleSelections } from "./round";
 export type { TroopDie } from "./bag";
 export type { PopulatedDepotsResult } from "./depots";
+export type { DepotPhaseOptions } from "./depot-phase";
 export type { EquipmentResource } from "./equipment";
 export type { ContractSelectionOptions } from "./contract-selection";
 export type { MusterPhaseOptions } from "./muster";

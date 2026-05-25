@@ -228,7 +228,7 @@ export function startGame(options: StartGameOptions = {}): StartGameResult {
       C: [],
     },
     bag: populated.remainingBag,
-    depots: populated.depots,
+    depots: [],
     equipment,
   };
 }

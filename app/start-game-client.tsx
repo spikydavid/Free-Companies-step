@@ -11,6 +11,7 @@ import { runContractSelectionPhase } from "@/lib/field-of-honour/contract-select
 import { runMusterPhase } from "@/lib/field-of-honour/muster";
 import { runCampaignPhase } from "@/lib/field-of-honour/campaign";
 import { runPaymentPhase } from "@/lib/field-of-honour/payment";
+import { runDepotPhase } from "@/lib/field-of-honour/depot-phase";
 import {
   createDefaultPlayerKinds,
   startGame,
@@ -100,6 +101,20 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
       );
     } catch (roundError) {
       setError(roundError instanceof Error ? roundError.message : "Failed to begin round");
+    }
+  }
+
+  function onRunDepotPhase() {
+    if (!started) {
+      return;
+    }
+
+    setError(null);
+    try {
+      const next = runDepotPhase(started);
+      setStarted(next);
+    } catch (phaseError) {
+      setError(phaseError instanceof Error ? phaseError.message : "Failed depot phase");
     }
   }
 
@@ -252,7 +267,17 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
           <div className="mt-5 rounded-xl border border-zinc-300 bg-zinc-50 p-4">
             <h3 className="text-sm font-semibold">Round {started.roundNumber}: Role Selection</h3>
             <p className="mt-1 text-xs text-zinc-700">
-              Human players select roles; AI players choose random available roles. Action order is by role priority with SwordBearer proximity tie-break.
+              Round order: Depot phase first, then role selection. Human players select roles; AI players choose random available roles. Action order is by role priority with SwordBearer proximity tie-break.
+            </p>
+
+            <button
+              onClick={onRunDepotPhase}
+              className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-50 hover:bg-zinc-700"
+            >
+              Run Depot Phase
+            </button>
+            <p className="mt-2 text-xs text-zinc-700">
+              Current round depots available: {started.depots.length}
             </p>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -279,6 +304,7 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
 
             <button
               onClick={onBeginRound}
+              disabled={started.depots.length < started.players.length}
               className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-50 hover:bg-zinc-700"
             >
               Begin Round With Selected Roles
