@@ -40,6 +40,17 @@ const BASE_ROLE_SET: RoleCard[] = [
   "RETURN_ALL_ROLES",
 ];
 
+const ROLE_PRIORITY: Record<RoleCard, number> = {
+  RETURN_ALL_ROLES: 1,
+  NEGOTIATOR: 2,
+  SURGEON: 3,
+  ARMOURER: 4,
+  FORAGER: 5,
+  PAYMASTER: 6,
+  RECRUITER: 7,
+  BATTLE_MASTER: 8,
+};
+
 interface BattleRolls {
   melee: number[];
   ranged: number[];
@@ -225,13 +236,15 @@ export class FieldOfHonourEngine {
   }
 
   playAutoRound(): RoundResult {
-    const order = this.turnOrder().map((player) => player.id);
+    const startOrder = this.turnOrder().map((player) => player.id);
     const state = this.getState();
 
     const roles: Record<string, RoleCard> = {};
     for (const player of state.players) {
       roles[player.id] = this.pickAutoRole(player.availableRoles);
     }
+
+    const order = this.phaseOrderFromRoleChoices(roles).map((player) => player.id);
 
     const depotIndexByPlayer: Record<string, number> = {};
     order.forEach((playerId, index) => {
@@ -274,7 +287,7 @@ export class FieldOfHonourEngine {
 
     return this.playRound({
       roles,
-      depotChoiceOrder: order,
+      depotChoiceOrder: startOrder,
       depotIndexByPlayer,
       contractsAddedByPlayer,
       contractDraftChoices,
@@ -699,24 +712,12 @@ export class FieldOfHonourEngine {
   }
 
   private pickAutoRole(availableRoles: RoleCard[]): RoleCard {
-    const priority: RoleCard[] = [
-      "FORAGER",
-      "PAYMASTER",
-      "SURGEON",
-      "BATTLE_MASTER",
-      "ARMOURER",
-      "RECRUITER",
-      "NEGOTIATOR",
-      "RETURN_ALL_ROLES",
-    ];
-
-    for (const role of priority) {
-      if (availableRoles.includes(role)) {
-        return role;
-      }
+    if (availableRoles.length === 0) {
+      return "RETURN_ALL_ROLES";
     }
 
-    return "RETURN_ALL_ROLES";
+    const idx = Math.floor(this.random() * availableRoles.length);
+    return availableRoles[idx] ?? "RETURN_ALL_ROLES";
   }
 
   private peekNextAddableContractIds(count: number): string[] {
@@ -817,7 +818,7 @@ export class FieldOfHonourEngine {
   }
 
   private selectRoles(roles: Record<string, RoleCard>): void {
-    for (const player of this.turnOrder()) {
+    for (const player of this.phaseOrderFromRoleChoices(roles)) {
       const chosen = roles[player.id];
       if (!chosen) {
         throw new Error(`Missing role choice for ${player.id}`);
@@ -870,14 +871,13 @@ export class FieldOfHonourEngine {
   }
 
   private musterAndEnlist(
-    depotChoiceOrder: string[],
+    _depotChoiceOrder: string[],
     depotIndexByPlayer: Record<string, number>,
   ): void {
     const depots = this.createDepots(this.players.length);
     const chosen = new Set<number>();
 
-    for (const playerId of depotChoiceOrder) {
-      const player = this.requirePlayer(playerId);
+    for (const player of this.phaseOrder()) {
       const depotIndex = depotIndexByPlayer[player.id];
       if (depotIndex === undefined) {
         throw new Error(`Missing depot choice for ${player.id}`);
@@ -903,8 +903,9 @@ export class FieldOfHonourEngine {
   private addContractsAndDraft(choices: RoundChoices): void {
     this.availableContractsThisRound.length = 0;
     const negotiatorPlayers: RuntimePlayerState[] = [];
+    const phaseOrder = this.phaseOrder();
 
-    for (const player of this.turnOrder()) {
+    for (const player of phaseOrder) {
       const addChoices = choices.contractsAddedByPlayer[player.id];
       if (!addChoices) {
         throw new Error(`Missing contracts-to-pool choice for ${player.id}`);
@@ -934,7 +935,7 @@ export class FieldOfHonourEngine {
     }
 
     for (const pickNumber of [0, 1] as const) {
-      for (const player of this.turnOrder()) {
+      for (const player of phaseOrder) {
         const draftChoice = choices.contractDraftChoices[player.id]?.[pickNumber];
         if (!draftChoice) {
           throw new Error(`Missing contract draft choice #${pickNumber + 1} for ${player.id}`);
@@ -971,7 +972,7 @@ export class FieldOfHonourEngine {
   private runCampaigns(campaignPlanByPlayer: Record<string, CampaignPlan>): CampaignResult[] {
     const results: CampaignResult[] = [];
 
-    for (const player of this.turnOrder()) {
+    for (const player of this.phaseOrder()) {
       const plan = campaignPlanByPlayer[player.id];
       if (!plan) {
         throw new Error(`Missing campaign plan for ${player.id}`);
@@ -1120,7 +1121,7 @@ export class FieldOfHonourEngine {
     payrollLoanCounts: Record<string, number>,
     payrollDisband: Record<string, TroopCounts>,
   ): void {
-    for (const player of this.turnOrder()) {
+    for (const player of this.phaseOrder()) {
       if (player.roundRoleEffects.paymaster) {
         continue;
       }
@@ -1153,13 +1154,14 @@ export class FieldOfHonourEngine {
 
   private applyAwards(): Award[] {
     const awarded: Award[] = [];
+    const phaseOrder = this.phaseOrder();
 
     for (const award of this.selectedAwards) {
       if (this.awardOwners.has(award.type)) {
         continue;
       }
 
-      const owner = this.turnOrder().find((player) =>
+      const owner = phaseOrder.find((player) =>
         player.completed.filter((contract) => contract.type === award.type).length >= award.threshold,
       );
 
@@ -1745,6 +1747,47 @@ export class FieldOfHonourEngine {
   private turnOrder(): RuntimePlayerState[] {
     const copy = [...this.players];
     return [...copy.slice(this.startPlayerIndex), ...copy.slice(0, this.startPlayerIndex)];
+  }
+
+  private rolePriority(role: RoleCard | null | undefined): number {
+    if (!role) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    return ROLE_PRIORITY[role];
+  }
+
+  private phaseOrder(): RuntimePlayerState[] {
+    const startOrder = this.turnOrder();
+    const startIndexByPlayerId = new Map(startOrder.map((player, index) => [player.id, index]));
+
+    return [...startOrder].sort((left, right) => {
+      const priorityDiff = this.rolePriority(left.selectedRole) - this.rolePriority(right.selectedRole);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return (
+        (startIndexByPlayerId.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (startIndexByPlayerId.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      );
+    });
+  }
+
+  private phaseOrderFromRoleChoices(roles: Record<string, RoleCard>): RuntimePlayerState[] {
+    const startOrder = this.turnOrder();
+    const startIndexByPlayerId = new Map(startOrder.map((player, index) => [player.id, index]));
+
+    return [...startOrder].sort((left, right) => {
+      const leftRole = roles[left.id];
+      const rightRole = roles[right.id];
+      const priorityDiff = this.rolePriority(leftRole) - this.rolePriority(rightRole);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return (
+        (startIndexByPlayerId.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (startIndexByPlayerId.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      );
+    });
   }
 
   private requirePlayer(playerId: string): RuntimePlayerState {
