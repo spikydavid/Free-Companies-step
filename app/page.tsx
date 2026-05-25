@@ -35,7 +35,7 @@ interface CampaignPayload {
 }
 
 export default function Home() {
-  const emptyTroops: TroopCounts = { melee: 0, ranged: 0, mounted: 0 };
+  const createEmptyTroops = (): TroopCounts => ({ melee: 0, ranged: 0, mounted: 0 });
   const [playerCount, setPlayerCount] = useState(2);
   const [seed, setSeed] = useState(7);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export default function Home() {
   const [selectedBattlePlayer, setSelectedBattlePlayer] = useState<string>("");
   const [selectedBattleContract, setSelectedBattleContract] = useState<string>("");
   const [selectedCampaignContracts, setSelectedCampaignContracts] = useState<string[]>([]);
-  const [campaignSendHome, setCampaignSendHome] = useState<TroopCounts>(emptyTroops);
+  const [campaignSendHome, setCampaignSendHome] = useState<TroopCounts>(createEmptyTroops());
   const [manualCampaign, setManualCampaign] = useState<ManualCampaignState | null>(null);
   const [manualBattle, setManualBattle] = useState<ManualBattleState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export default function Home() {
       setSelectedBattlePlayer(data.state.players[0]?.id ?? "");
       setSelectedBattleContract(data.state.players[0]?.queue[0]?.id ?? "");
       setSelectedCampaignContracts([]);
-      setCampaignSendHome(emptyTroops);
+      setCampaignSendHome(createEmptyTroops());
       setManualCampaign(null);
       setManualBattle(null);
     } catch (err) {
@@ -113,7 +113,7 @@ export default function Home() {
         setSelectedBattlePlayer(data.state.players[0].id);
       }
       setSelectedCampaignContracts([]);
-      setCampaignSendHome(emptyTroops);
+      setCampaignSendHome(createEmptyTroops());
       setManualCampaign(null);
       setManualBattle(null);
     } catch (err) {
@@ -268,7 +268,7 @@ export default function Home() {
       }
 
       setManualCampaign(data.campaign);
-      setCampaignSendHome(emptyTroops);
+      setCampaignSendHome(createEmptyTroops());
       setManualBattle(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start manual campaign");
@@ -296,7 +296,7 @@ export default function Home() {
       }
 
       setManualBattle(data.battle);
-      setCampaignSendHome(emptyTroops);
+      setCampaignSendHome(createEmptyTroops());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start next campaign battle");
     } finally {
@@ -498,7 +498,7 @@ export default function Home() {
                     const queue = state.players.find((item) => item.id === nextPlayer)?.queue ?? [];
                     setSelectedBattleContract(queue[0]?.id ?? "");
                     setSelectedCampaignContracts([]);
-                    setCampaignSendHome(emptyTroops);
+                    setCampaignSendHome(createEmptyTroops());
                     setManualCampaign(null);
                     setManualBattle(null);
                   }}
