@@ -213,6 +213,7 @@ export class FieldOfHonourEngine {
     this.startPlayerIndex = (this.startPlayerIndex + 1) % this.players.length;
     const result: RoundResult = {
       roundNumber: this.roundNumber,
+      rolesSelectedByPlayer: { ...choices.roles },
       campaignResults,
       awardedThisRound,
       startPlayerForNextRound: this.turnOrder()[0].id,

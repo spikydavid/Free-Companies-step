@@ -1,6 +1,8 @@
 "use client";
 
-import type { TroopType } from "@/lib/field-of-honour";
+import { useMemo } from "react";
+
+import type { RoleCard, TroopType } from "@/lib/field-of-honour";
 
 import { useGameSession } from "./hooks/useGameSession";
 
@@ -19,7 +21,34 @@ interface RoundMetricsPoint {
   players: RoundMetricsPlayerPoint[];
 }
 
-const LINE_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0f766e"];
+type RoleSelectionCounts = Record<RoleCard, number>;
+
+interface RoleSelectionPoint {
+  roundNumber: number;
+  counts: RoleSelectionCounts;
+}
+
+const LINE_COLORS = [
+  "#2563eb",
+  "#dc2626",
+  "#059669",
+  "#d97706",
+  "#7c3aed",
+  "#0f766e",
+  "#be185d",
+  "#1d4ed8",
+];
+
+const ROLE_CARDS: RoleCard[] = [
+  "NEGOTIATOR",
+  "SURGEON",
+  "ARMOURER",
+  "FORAGER",
+  "PAYMASTER",
+  "RECRUITER",
+  "BATTLE_MASTER",
+  "RETURN_ALL_ROLES",
+];
 
 function MetricLineChart({
   title,
@@ -130,6 +159,108 @@ function MetricLineChart({
   );
 }
 
+function RoleSelectionLineChart({
+  title,
+  history,
+  roles,
+}: {
+  title: string;
+  history: RoleSelectionPoint[];
+  roles: RoleCard[];
+}) {
+  if (history.length === 0) {
+    return null;
+  }
+
+  const width = 560;
+  const height = 220;
+  const padLeft = 42;
+  const padRight = 12;
+  const padTop = 18;
+  const padBottom = 28;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+
+  const rounds = history.map((point) => point.roundNumber);
+  const minRound = Math.min(...rounds);
+  const maxRound = Math.max(...rounds);
+  const roundSpan = Math.max(1, maxRound - minRound);
+
+  const allValues = history.flatMap((point) => roles.map((role) => point.counts[role]));
+  const maxValue = Math.max(1, ...allValues);
+
+  const xForRound = (round: number) =>
+    padLeft + ((round - minRound) / roundSpan) * plotWidth;
+  const yForValue = (value: number) =>
+    padTop + (1 - value / maxValue) * plotHeight;
+
+  return (
+    <div className="rounded-2xl border border-zinc-300 bg-white p-4 lg:col-span-2">
+      <p className="mb-2 text-sm font-semibold text-zinc-800">{title}</p>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full">
+        <line x1={padLeft} y1={padTop} x2={padLeft} y2={height - padBottom} stroke="#94a3b8" strokeWidth="1" />
+        <line
+          x1={padLeft}
+          y1={height - padBottom}
+          x2={width - padRight}
+          y2={height - padBottom}
+          stroke="#94a3b8"
+          strokeWidth="1"
+        />
+        <text x={padLeft - 12} y={padTop + 4} className="fill-zinc-500 text-[10px]">
+          {maxValue}
+        </text>
+        <text x={padLeft - 12} y={height - padBottom + 4} className="fill-zinc-500 text-[10px]">
+          0
+        </text>
+        <text x={padLeft} y={height - 8} className="fill-zinc-500 text-[10px]">
+          R{minRound}
+        </text>
+        <text x={width - padRight - 24} y={height - 8} className="fill-zinc-500 text-[10px]">
+          R{maxRound}
+        </text>
+
+        {roles.map((role, idx) => {
+          const points = history.map((point) => ({
+            x: xForRound(point.roundNumber),
+            y: yForValue(point.counts[role]),
+          }));
+
+          const pathD = points
+            .map((point, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+            .join(" ");
+
+          return (
+            <g key={`role-${role}`}>
+              <path d={pathD} fill="none" stroke={LINE_COLORS[idx % LINE_COLORS.length]} strokeWidth="2" />
+              {points.map((point, pointIndex) => (
+                <circle
+                  key={`role-${role}-${pointIndex}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r="2.2"
+                  fill={LINE_COLORS[idx % LINE_COLORS.length]}
+                />
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="mt-2 flex flex-wrap gap-3 text-xs">
+        {roles.map((role, idx) => (
+          <span key={`legend-${role}`} className="inline-flex items-center gap-1">
+            <span
+              className="inline-block h-2 w-2 rounded-full"
+              style={{ backgroundColor: LINE_COLORS[idx % LINE_COLORS.length] }}
+            />
+            {role}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const {
     playerCount,
@@ -153,6 +284,7 @@ export default function Home() {
     error,
     busy,
     latestRound,
+    roleSelectionHistory,
     selectedPlayerContracts,
     effectiveSelectedBattleContract,
     gameEnded,
@@ -180,6 +312,7 @@ export default function Home() {
 
   const humanPlayerList = state?.players.filter((_, i) => playerTypes[i] === "human") ?? [];
   const chartPlayerIds = state?.players.map((player) => player.id) ?? [];
+  const roleCardsForChart = useMemo(() => ROLE_CARDS, []);
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_0%_0%,#f8d5a5_0%,#f2e8cf_35%,#dbe7c9_70%,#b5d5c5_100%)] px-6 py-8 text-zinc-900">
@@ -398,6 +531,11 @@ export default function Home() {
                 history={roundMetrics}
                 playerIds={chartPlayerIds}
                 metric="contracts"
+              />
+              <RoleSelectionLineChart
+                title="Role Selections (Cumulative)"
+                history={roleSelectionHistory}
+                roles={roleCardsForChart}
               />
             </div>
           </section>

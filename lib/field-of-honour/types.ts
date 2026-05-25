@@ -126,6 +126,7 @@ export interface CampaignResult {
 
 export interface RoundResult {
   roundNumber: number;
+  rolesSelectedByPlayer: Record<string, RoleCard>;
   campaignResults: CampaignResult[];
   awardedThisRound: Award[];
   startPlayerForNextRound: string;

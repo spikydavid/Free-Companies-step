@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   FinalScore,
   ManualCampaignState,
   ManualBattleState,
   PlayerState,
+  RoleCard,
   RoundResult,
   TroopCounts,
   TroopType,
@@ -31,6 +32,13 @@ interface RoundMetricsPoint {
   players: PlayerRoundMetrics[];
 }
 
+type RoleSelectionCounts = Record<RoleCard, number>;
+
+interface RoleSelectionPoint {
+  roundNumber: number;
+  counts: RoleSelectionCounts;
+}
+
 interface SessionPayload {
   sessionId: string;
   state: GameSnapshot;
@@ -48,6 +56,30 @@ interface CampaignPayload {
 }
 
 const createEmptyTroops = (): TroopCounts => ({ melee: 0, ranged: 0, mounted: 0 });
+
+const ROLE_CARDS: RoleCard[] = [
+  "NEGOTIATOR",
+  "SURGEON",
+  "ARMOURER",
+  "FORAGER",
+  "PAYMASTER",
+  "RECRUITER",
+  "BATTLE_MASTER",
+  "RETURN_ALL_ROLES",
+];
+
+function createEmptyRoleSelectionCounts(): RoleSelectionCounts {
+  return {
+    NEGOTIATOR: 0,
+    SURGEON: 0,
+    ARMOURER: 0,
+    FORAGER: 0,
+    PAYMASTER: 0,
+    RECRUITER: 0,
+    BATTLE_MASTER: 0,
+    RETURN_ALL_ROLES: 0,
+  };
+}
 
 function toRoundMetricsPoint(state: GameSnapshot, roundNumber: number): RoundMetricsPoint {
   return {
@@ -145,6 +177,32 @@ export function useGameSession() {
     [roundHistory],
   );
 
+  const roleSelectionHistory = useMemo<RoleSelectionPoint[]>(() => {
+    const running = createEmptyRoleSelectionCounts();
+    const points: RoleSelectionPoint[] = [{ roundNumber: 0, counts: { ...running } }];
+
+    for (const round of roundHistory) {
+      for (const role of ROLE_CARDS) {
+        const selectedCount = Object.values(round.rolesSelectedByPlayer).filter(
+          (selectedRole) => selectedRole === role,
+        ).length;
+        running[role] += selectedCount;
+      }
+
+      points.push({
+        roundNumber: round.roundNumber,
+        counts: { ...running },
+      });
+    }
+
+    return points;
+  }, [roundHistory]);
+
+  const hasHumanPlayers = useMemo(
+    () => playerTypes.slice(0, playerCount).some((type) => type === "human"),
+    [playerCount, playerTypes],
+  );
+
   const selectedPlayerContracts =
     state && selectedBattlePlayer
       ? state.players.find((item) => item.id === selectedBattlePlayer)?.queue ?? []
@@ -156,16 +214,16 @@ export function useGameSession() {
     ? selectedBattleContract
     : selectedPlayerContracts[0]?.id ?? "";
 
-  function resetManualState() {
+  const resetManualState = useCallback(() => {
     setManualCampaign(null);
     setManualBattle(null);
-  }
+  }, []);
 
-  function resetManualSelectionState() {
+  const resetManualSelectionState = useCallback(() => {
     setSelectedCampaignContracts([]);
     setCampaignSendHome(createEmptyTroops());
     resetManualState();
-  }
+  }, [resetManualState]);
 
   function selectBattlePlayer(nextPlayer: string) {
     setSelectedBattlePlayer(nextPlayer);
@@ -209,7 +267,7 @@ export function useGameSession() {
     }
   }
 
-  async function playRound() {
+  const playRound = useCallback(async () => {
     if (!sessionId) {
       return;
     }
@@ -248,7 +306,7 @@ export function useGameSession() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [sessionId, selectedBattlePlayer, resetManualSelectionState]);
 
   async function startManualBattle() {
     if (!sessionId || !selectedBattlePlayer || !effectiveSelectedBattleContract) {
@@ -472,6 +530,20 @@ export function useGameSession() {
     }
   }
 
+  useEffect(() => {
+    if (!sessionId || !state || busy || gameEnded || hasHumanPlayers) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void playRound();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [sessionId, state, busy, gameEnded, hasHumanPlayers, playRound]);
+
   return {
     playerCount,
     setPlayerCount: updatePlayerCount,
@@ -495,6 +567,7 @@ export function useGameSession() {
     error,
     busy,
     latestRound,
+    roleSelectionHistory,
     selectedPlayerContracts,
     effectiveSelectedBattleContract,
     startSession,
