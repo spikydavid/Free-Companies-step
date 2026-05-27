@@ -180,6 +180,8 @@ interface SimulationReport {
   failureMessages: Record<string, number>;
 }
 
+type SimulationDepotAiStrategy = "random" | "one-turn-rollout";
+
 export function StartGameClient({ contracts }: StartGameClientProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerKinds, setPlayerKinds] = useState<PlayerKind[]>(createDefaultPlayerKinds(4));
@@ -188,6 +190,8 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [simulationReport, setSimulationReport] = useState<SimulationReport | null>(null);
   const [simulationLoading, setSimulationLoading] = useState(false);
+  const [simulationUseRolloutDepotAi, setSimulationUseRolloutDepotAi] = useState(true);
+  const [simulationRolloutTrials, setSimulationRolloutTrials] = useState(24);
 
   const roleEntries = useMemo(
     () => Object.entries(ROLE_PRIORITY).sort((a, b) => a[1] - b[1]),
@@ -331,12 +335,21 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
     setError(null);
     setSimulationLoading(true);
     try {
+      const strategy: SimulationDepotAiStrategy = simulationUseRolloutDepotAi
+        ? "one-turn-rollout"
+        : "random";
+
       const response = await fetch("/api/simulations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ sims: 1000, playerCount: 4 }),
+        body: JSON.stringify({
+          sims: 1000,
+          playerCount: 4,
+          aiDepotChoiceStrategy: strategy,
+          aiDepotRolloutTrials: simulationRolloutTrials,
+        }),
       });
 
       const payload = (await response.json()) as SimulationReport | { error?: string };
@@ -766,6 +779,32 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
         <p className="mt-2 text-sm text-zinc-700">
           Run 1,000 AI-only games and aggregate averages by finishing position.
         </p>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex items-center gap-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              checked={simulationUseRolloutDepotAi}
+              onChange={(e) => setSimulationUseRolloutDepotAi(e.target.checked)}
+              className="h-4 w-4 rounded border-zinc-400"
+            />
+            Use one-turn rollout for AI depot choice
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs text-zinc-700">
+            Rollout trials
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={simulationRolloutTrials}
+              onChange={(e) => {
+                const next = Math.max(1, Math.min(200, Number(e.target.value) || 1));
+                setSimulationRolloutTrials(next);
+              }}
+              className="w-24 rounded-md border border-zinc-400 bg-white px-2 py-1 text-sm"
+            />
+          </label>
+        </div>
         <button
           onClick={onRunSimulations}
           disabled={simulationLoading}

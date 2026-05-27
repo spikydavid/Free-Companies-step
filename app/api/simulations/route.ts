@@ -9,6 +9,8 @@ export async function POST(request: Request) {
       maxAttempts?: number;
       guardLimit?: number;
       playerCount?: number;
+      aiDepotChoiceStrategy?: "random" | "one-turn-rollout";
+      aiDepotRolloutTrials?: number;
     };
 
     const report = runFinishingPositionSimulations({
@@ -16,6 +18,8 @@ export async function POST(request: Request) {
       maxAttempts: body.maxAttempts,
       guardLimit: body.guardLimit,
       playerCount: body.playerCount,
+      aiDepotChoiceStrategy: body.aiDepotChoiceStrategy,
+      aiDepotRolloutTrials: body.aiDepotRolloutTrials,
     });
 
     return NextResponse.json(report);

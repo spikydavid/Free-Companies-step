@@ -97,6 +97,8 @@ export interface RunSimulationsOptions {
   maxAttempts?: number;
   guardLimit?: number;
   playerCount?: number;
+  aiDepotChoiceStrategy?: "random" | "one-turn-rollout";
+  aiDepotRolloutTrials?: number;
 }
 
 function createAggregate(): Record<Rank, AggregateRow> {
@@ -165,6 +167,8 @@ function playGame(
   contracts = loadContractsFromSheet1Csv("data/contracts-sheet1.csv"),
   playerCount = 4,
   guardLimit = 1000,
+  aiDepotChoiceStrategy: "random" | "one-turn-rollout" = "one-turn-rollout",
+  aiDepotRolloutTrials = 24,
 ): GameSimulationResult {
   let state = startGame({
     playerCount,
@@ -188,7 +192,10 @@ function playGame(
     } else if (Object.keys(state.currentRoundContractsDraftedByPlayer).length === 0) {
       state = runContractSelectionPhase(state);
     } else if (Object.keys(state.currentRoundMusterDiceByPlayer).length === 0) {
-      state = runMusterPhase(state);
+      state = runMusterPhase(state, {
+        aiDepotChoiceStrategy,
+        aiDepotRolloutTrials,
+      });
     } else if (Object.keys(state.currentRoundCampaignResolutionByPlayer).length === 0) {
       state = runCampaignPhase(state);
     } else {
@@ -221,6 +228,8 @@ export function runFinishingPositionSimulations(
   const maxAttempts = Math.max(sims, Math.floor(options.maxAttempts ?? sims * 3));
   const guardLimit = Math.max(1, Math.floor(options.guardLimit ?? 1000));
   const playerCount = Math.max(2, Math.min(6, Math.floor(options.playerCount ?? 4)));
+  const aiDepotChoiceStrategy = options.aiDepotChoiceStrategy ?? "one-turn-rollout";
+  const aiDepotRolloutTrials = Math.max(1, Math.floor(options.aiDepotRolloutTrials ?? 24));
 
   if (playerCount !== 4) {
     throw new Error("Finishing-position simulation currently supports playerCount=4");
@@ -238,7 +247,13 @@ export function runFinishingPositionSimulations(
   while (successful < sims && attempts < maxAttempts) {
     attempts += 1;
     try {
-      const { finalState, turnSnapshots } = playGame(contracts, playerCount, guardLimit);
+      const { finalState, turnSnapshots } = playGame(
+        contracts,
+        playerCount,
+        guardLimit,
+        aiDepotChoiceStrategy,
+        aiDepotRolloutTrials,
+      );
       successful += 1;
       totalRounds += finalState.roundNumber;
 
