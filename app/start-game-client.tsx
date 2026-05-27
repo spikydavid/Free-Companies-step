@@ -88,6 +88,7 @@ const TRACKER_METRICS: TrackerMetricConfig[] = [
 
 const CHART_WIDTH = 640;
 const CHART_HEIGHT = 100;
+const CHART_Y_TICKS = 4;
 
 interface CombinedTurnAverageRow {
   turn: number;
@@ -180,7 +181,14 @@ interface SimulationReport {
   failureMessages: Record<string, number>;
 }
 
+interface SimulationBenchmarkRow {
+  label: string;
+  draftStrategy: SimulationDraftAiStrategy;
+  report: SimulationReport;
+}
+
 type SimulationDepotAiStrategy = "random" | "one-turn-rollout";
+type SimulationDraftAiStrategy = "random" | "heuristic" | "one-round-rollout";
 
 export function StartGameClient({ contracts }: StartGameClientProps) {
   const [playerCount, setPlayerCount] = useState(4);
@@ -190,8 +198,14 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [simulationReport, setSimulationReport] = useState<SimulationReport | null>(null);
   const [simulationLoading, setSimulationLoading] = useState(false);
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false);
   const [simulationUseRolloutDepotAi, setSimulationUseRolloutDepotAi] = useState(true);
   const [simulationRolloutTrials, setSimulationRolloutTrials] = useState(24);
+  const [simulationDraftAiStrategy, setSimulationDraftAiStrategy] =
+    useState<SimulationDraftAiStrategy>("heuristic");
+  const [simulationDraftRolloutTrials, setSimulationDraftRolloutTrials] = useState(24);
+  const [simulationBenchmarkRows, setSimulationBenchmarkRows] =
+    useState<SimulationBenchmarkRow[] | null>(null);
 
   const roleEntries = useMemo(
     () => Object.entries(ROLE_PRIORITY).sort((a, b) => a[1] - b[1]),
@@ -349,6 +363,8 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
           playerCount: 4,
           aiDepotChoiceStrategy: strategy,
           aiDepotRolloutTrials: simulationRolloutTrials,
+          aiDraftStrategy: simulationDraftAiStrategy,
+          aiDraftRolloutTrials: simulationDraftRolloutTrials,
         }),
       });
 
@@ -358,10 +374,81 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
       }
 
       setSimulationReport(payload);
+      setSimulationBenchmarkRows(null);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Failed to run simulations");
     } finally {
       setSimulationLoading(false);
+    }
+  }
+
+  async function runSimulationRequest(
+    draftStrategy: SimulationDraftAiStrategy,
+  ): Promise<SimulationReport> {
+    const depotStrategy: SimulationDepotAiStrategy = simulationUseRolloutDepotAi
+      ? "one-turn-rollout"
+      : "random";
+
+    const response = await fetch("/api/simulations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sims: 1000,
+        playerCount: 4,
+        aiDepotChoiceStrategy: depotStrategy,
+        aiDepotRolloutTrials: simulationRolloutTrials,
+        aiDraftStrategy: draftStrategy,
+        aiDraftRolloutTrials: simulationDraftRolloutTrials,
+      }),
+    });
+
+    const payload = (await response.json()) as SimulationReport | { error?: string };
+    if (!response.ok || !("successfulSimulations" in payload)) {
+      throw new Error((payload as { error?: string }).error ?? "Simulation request failed");
+    }
+
+    return payload;
+  }
+
+  async function onRunBenchmark() {
+    setError(null);
+    setBenchmarkLoading(true);
+    try {
+      const [randomReport, heuristicReport, rolloutReport] = await Promise.all([
+        runSimulationRequest("random"),
+        runSimulationRequest("heuristic"),
+        runSimulationRequest("one-round-rollout"),
+      ]);
+
+      const rows: SimulationBenchmarkRow[] = [
+        {
+          label: "Random",
+          draftStrategy: "random",
+          report: randomReport,
+        },
+        {
+          label: "Heuristic",
+          draftStrategy: "heuristic",
+          report: heuristicReport,
+        },
+        {
+          label: "One-round rollout",
+          draftStrategy: "one-round-rollout",
+          report: rolloutReport,
+        },
+      ];
+
+      setSimulationBenchmarkRows(rows);
+    } catch (benchmarkError) {
+      setError(
+        benchmarkError instanceof Error
+          ? benchmarkError.message
+          : "Failed to run strategy benchmark",
+      );
+    } finally {
+      setBenchmarkLoading(false);
     }
   }
 
@@ -791,7 +878,7 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
           </label>
 
           <label className="flex flex-col gap-1 text-xs text-zinc-700">
-            Rollout trials
+            Depot rollout trials
             <input
               type="number"
               min={1}
@@ -804,14 +891,95 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
               className="w-24 rounded-md border border-zinc-400 bg-white px-2 py-1 text-sm"
             />
           </label>
+
+          <label className="flex flex-col gap-1 text-xs text-zinc-700">
+            Draft AI strategy
+            <select
+              value={simulationDraftAiStrategy}
+              onChange={(e) => setSimulationDraftAiStrategy(e.target.value as SimulationDraftAiStrategy)}
+              className="rounded-md border border-zinc-400 bg-white px-2 py-1 text-sm"
+            >
+              <option value="heuristic">Heuristic</option>
+              <option value="one-round-rollout">One-round rollout</option>
+              <option value="random">Random</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs text-zinc-700">
+            Draft rollout trials
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={simulationDraftRolloutTrials}
+              disabled={simulationDraftAiStrategy !== "one-round-rollout"}
+              onChange={(e) => {
+                const next = Math.max(1, Math.min(200, Number(e.target.value) || 1));
+                setSimulationDraftRolloutTrials(next);
+              }}
+              className="w-24 rounded-md border border-zinc-400 bg-white px-2 py-1 text-sm disabled:opacity-50"
+            />
+          </label>
         </div>
         <button
           onClick={onRunSimulations}
-          disabled={simulationLoading}
+          disabled={simulationLoading || benchmarkLoading}
           className="mt-3 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {simulationLoading ? "Running Simulations..." : "Run 1000 Simulations"}
         </button>
+        <button
+          onClick={onRunBenchmark}
+          disabled={simulationLoading || benchmarkLoading}
+          className="mt-3 ml-2 rounded-lg border border-zinc-400 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {benchmarkLoading
+            ? "Running Benchmark..."
+            : "Benchmark Draft AI (Random vs Heuristic vs Rollout)"}
+        </button>
+
+        {simulationBenchmarkRows ? (
+          <div className="mt-4 rounded-md border border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-800">
+            <p className="font-semibold">Draft AI Benchmark (1,000 sims each)</p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="min-w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-zinc-300 text-left">
+                    <th className="px-2 py-1">Strategy</th>
+                    <th className="px-2 py-1">Completed</th>
+                    <th className="px-2 py-1">Avg Rounds</th>
+                    <th className="px-2 py-1">Avg 1st Place Renown</th>
+                    <th className="px-2 py-1">Failures</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {simulationBenchmarkRows.map((row) => {
+                    const firstPlace = row.report.byFinishingPosition.find(
+                      (entry) => entry.rank === "1st",
+                    );
+                    return (
+                      <tr key={`benchmark-${row.draftStrategy}`} className="border-b border-zinc-200">
+                        <td className="px-2 py-1">{row.label}</td>
+                        <td className="px-2 py-1">
+                          {row.report.successfulSimulations}/{row.report.totalAttempts}
+                        </td>
+                        <td className="px-2 py-1">
+                          {row.report.averageRounds?.toFixed(3) ?? "-"}
+                        </td>
+                        <td className="px-2 py-1">
+                          {firstPlace?.avgTotalRenown.toFixed(3) ?? "-"}
+                        </td>
+                        <td className="px-2 py-1">
+                          {Object.keys(row.report.failureMessages).length}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
 
         {simulationReport ? (
           <div className="mt-4 rounded-md border border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-800">
@@ -839,6 +1007,41 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
                 className="mt-2 h-28 w-full rounded border border-zinc-200 bg-zinc-50"
                 aria-label="Combined all-player round trends"
               >
+                {Array.from({ length: CHART_Y_TICKS + 1 }, (_, index) => {
+                  const ratio = index / CHART_Y_TICKS;
+                  const y = CHART_HEIGHT - CHART_HEIGHT * ratio;
+                  return (
+                    <line
+                      key={`sim-y-grid-${index}`}
+                      x1="0"
+                      y1={y}
+                      x2={CHART_WIDTH}
+                      y2={y}
+                      stroke="currentColor"
+                      className="text-zinc-200"
+                    />
+                  );
+                })}
+
+                {combinedTurnAverages.map((turnRow, index) => {
+                  if (combinedTurnAverages.length <= 1) {
+                    return null;
+                  }
+
+                  const x = (CHART_WIDTH / (combinedTurnAverages.length - 1)) * index;
+                  return (
+                    <line
+                      key={`sim-x-grid-${turnRow.turn}`}
+                      x1={x}
+                      y1="0"
+                      x2={x}
+                      y2={CHART_HEIGHT}
+                      stroke="currentColor"
+                      className="text-zinc-200"
+                    />
+                  );
+                })}
+
                 <line
                   x1="0"
                   y1={CHART_HEIGHT}
@@ -862,7 +1065,28 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
                     />
                   );
                 })}
+
+                {Array.from({ length: CHART_Y_TICKS + 1 }, (_, index) => {
+                  const ratio = index / CHART_Y_TICKS;
+                  const y = CHART_HEIGHT - CHART_HEIGHT * ratio;
+                  const valueLabel = (combinedMaxValue * ratio).toFixed(1);
+                  return (
+                    <text
+                      key={`sim-y-label-${index}`}
+                      x="4"
+                      y={Math.max(10, y - 2)}
+                      className="fill-zinc-500 text-[8px]"
+                    >
+                      {valueLabel}
+                    </text>
+                  );
+                })}
               </svg>
+
+              <div className="mt-1 flex items-center justify-between text-[10px] text-zinc-600">
+                <span>Round 1</span>
+                <span>Round {combinedTurnAverages[combinedTurnAverages.length - 1]?.turn ?? 1}</span>
+              </div>
 
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
                 {TRACKER_METRICS.map((metric) => (

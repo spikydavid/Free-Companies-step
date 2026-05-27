@@ -2,11 +2,219 @@ import type { Contract, ContractPoolEntry } from "./types";
 import type { StartGameResult } from "./start-game";
 
 type ContractTierKey = "A" | "B" | "C";
+type TroopType = "melee" | "ranged" | "mounted";
+
+type AiDraftStrategy = "random" | "heuristic" | "one-round-rollout";
 
 export interface ContractSelectionOptions {
   random?: () => number;
   humanPoolSelectionsByPlayer?: Record<string, [string, string]>;
   humanDraftSelectionsByPlayer?: Record<string, [string, string]>;
+  aiDraftStrategy?: AiDraftStrategy;
+  aiDraftRolloutTrials?: number;
+}
+
+function countDiceByType(dice: StartGameResult["players"][number]["dice"]): Record<TroopType, number> {
+  return dice.reduce(
+    (acc, die) => {
+      acc[die.troopType] += 1;
+      return acc;
+    },
+    {
+      melee: 0,
+      ranged: 0,
+      mounted: 0,
+    } as Record<TroopType, number>,
+  );
+}
+
+function computeCampaignCost(contracts: Contract[], forager: boolean): number {
+  if (forager || contracts.length <= 1) {
+    return 0;
+  }
+
+  let cost = contracts.length === 2 ? 2 : 5;
+  for (let i = 1; i < contracts.length; i += 1) {
+    if (contracts[i - 1]?.region !== contracts[i]?.region) {
+      cost += 3;
+    }
+  }
+
+  return cost;
+}
+
+function sortContractsForCampaign(contracts: Contract[], dice: StartGameResult["players"][number]["dice"]): Contract[] {
+  const available = countDiceByType(dice);
+  const scoreContract = (contract: Contract): number => {
+    const unmet =
+      Math.max(0, contract.requirements.melee - available.melee) +
+      Math.max(0, contract.requirements.ranged - available.ranged) +
+      Math.max(0, contract.requirements.mounted - available.mounted);
+    const requirementSize =
+      contract.requirements.melee +
+      contract.requirements.ranged +
+      contract.requirements.mounted;
+
+    return contract.rewardRenown * 100 + contract.rewardCrowns * 10 - unmet * 25 - requirementSize;
+  };
+
+  return [...contracts].sort((left, right) => {
+    const scoreDiff = scoreContract(right) - scoreContract(left);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function chooseAffordableCampaignContracts(
+  sortedContracts: Contract[],
+  crowns: number,
+  forager: boolean,
+): Contract[] {
+  const maxCount = Math.min(3, sortedContracts.length);
+  for (let count = maxCount; count >= 1; count -= 1) {
+    const bundle = sortedContracts.slice(0, count);
+    if (computeCampaignCost(bundle, forager) <= crowns) {
+      return bundle;
+    }
+  }
+  return [];
+}
+
+function scoreDraftContractHeuristic(
+  player: StartGameResult["players"][number],
+  contract: Contract,
+): number {
+  const available = countDiceByType(player.dice);
+  const deficit =
+    Math.max(0, contract.requirements.melee - available.melee) +
+    Math.max(0, contract.requirements.ranged - available.ranged) +
+    Math.max(0, contract.requirements.mounted - available.mounted);
+
+  const sameRegionInHand = player.contracts.filter((entry) => entry.region === contract.region).length;
+  const sameTypeProgress =
+    player.completedContracts.filter((entry) => entry.type === contract.type).length +
+    player.contracts.filter((entry) => entry.type === contract.type).length;
+
+  const rewardScore = contract.rewardRenown * 100 + contract.rewardCrowns * 12;
+  const economyBonus = player.crowns <= 2 ? contract.rewardCrowns * 8 : contract.rewardCrowns * 2;
+  const regionBonus = sameRegionInHand * 4;
+  const typeBonus = sameTypeProgress * 3;
+  const deficitPenalty = deficit * 26;
+
+  return rewardScore + economyBonus + regionBonus + typeBonus - deficitPenalty;
+}
+
+function scoreProjectedRoundUtility(
+  player: StartGameResult["players"][number],
+  projectedContracts: Contract[],
+  selectedRole: StartGameResult["players"][number]["selectedRole"],
+): number {
+  const hasForager = selectedRole === "FORAGER";
+  const sorted = sortContractsForCampaign(projectedContracts, player.dice);
+  const selected = chooseAffordableCampaignContracts(sorted, player.crowns, hasForager);
+  const available = countDiceByType(player.dice);
+  const campaignCost = computeCampaignCost(selected, hasForager);
+
+  let unmetPenalty = 0;
+  for (const contract of selected) {
+    const deficit =
+      Math.max(0, contract.requirements.melee - available.melee) +
+      Math.max(0, contract.requirements.ranged - available.ranged) +
+      Math.max(0, contract.requirements.mounted - available.mounted);
+    unmetPenalty += deficit * 18;
+  }
+
+  const reward = selected.reduce(
+    (acc, contract) => {
+      acc.renown += contract.rewardRenown;
+      acc.crowns += contract.rewardCrowns;
+      return acc;
+    },
+    { renown: 0, crowns: 0 },
+  );
+
+  return reward.renown * 100 + reward.crowns * 10 - campaignCost * 8 - unmetPenalty;
+}
+
+function chooseAiDraftIndex(
+  game: StartGameResult,
+  player: StartGameResult["players"][number],
+  playerId: string,
+  draftPool: ContractPoolEntry[],
+  eligibleIndices: number[],
+  draftedByPlayer: Record<string, Contract[]>,
+  strategy: AiDraftStrategy,
+  rolloutTrials: number,
+  random: () => number,
+): number {
+  if (strategy === "random") {
+    return eligibleIndices[Math.floor(random() * eligibleIndices.length)] as number;
+  }
+
+  const selectedRole = game.currentRoundRolesSelectedByPlayer[playerId];
+  const draftedAlready = draftedByPlayer[playerId] ?? [];
+
+  if (strategy === "heuristic") {
+    const scored = eligibleIndices.map((idx) => ({
+      idx,
+      score: scoreDraftContractHeuristic(player, draftPool[idx]!.contract),
+      tieBreaker: random(),
+    }));
+
+    scored.sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return right.tieBreaker - left.tieBreaker;
+    });
+
+    return scored[0]!.idx;
+  }
+
+  const trials = Math.max(1, Math.floor(rolloutTrials));
+  let bestIdx = eligibleIndices[0] as number;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const idx of eligibleIndices) {
+    const candidate = draftPool[idx]!.contract;
+    let totalScore = 0;
+
+    for (let t = 0; t < trials; t += 1) {
+      const projectedContracts: Contract[] = [
+        ...player.contracts,
+        ...draftedAlready,
+        candidate,
+      ];
+
+      if (draftedAlready.length === 0) {
+        const nextEligible = draftPool
+          .map((entry, entryIdx) => ({ entry, entryIdx }))
+          .filter(({ entryIdx, entry }) => {
+            if (entryIdx === idx) {
+              return false;
+            }
+            return !entry.restrictedToPlayerId || entry.restrictedToPlayerId === playerId;
+          })
+          .map(({ entry }) => entry.contract);
+
+        if (nextEligible.length > 0) {
+          projectedContracts.push(nextEligible[Math.floor(random() * nextEligible.length)] as Contract);
+        }
+      }
+
+      totalScore += scoreProjectedRoundUtility(player, projectedContracts, selectedRole);
+    }
+
+    const averageScore = totalScore / trials;
+    if (averageScore > bestScore) {
+      bestScore = averageScore;
+      bestIdx = idx;
+    }
+  }
+
+  return bestIdx;
 }
 
 function shuffleContracts(contracts: Contract[], random: () => number): Contract[] {
@@ -98,6 +306,8 @@ export function runContractSelectionPhase(
   }
 
   const random = options.random ?? Math.random;
+  const aiDraftStrategy: AiDraftStrategy = options.aiDraftStrategy ?? "heuristic";
+  const aiDraftRolloutTrials = Math.max(1, Math.floor(options.aiDraftRolloutTrials ?? 24));
   const contractDecks = {
     A: [...game.contractDecks.A],
     B: [...game.contractDecks.B],
@@ -201,7 +411,17 @@ export function runContractSelectionPhase(
         }
         pickedIdx = chosen;
       } else {
-        pickedIdx = eligibleIndices[Math.floor(random() * eligibleIndices.length)] as number;
+        pickedIdx = chooseAiDraftIndex(
+          game,
+          player,
+          playerId,
+          draftPool,
+          eligibleIndices,
+          draftedByPlayer,
+          aiDraftStrategy,
+          aiDraftRolloutTrials,
+          random,
+        );
       }
 
       const [picked] = draftPool.splice(pickedIdx, 1);

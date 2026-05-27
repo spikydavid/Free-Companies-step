@@ -1,7 +1,7 @@
 import type { StartGameResult } from "./start-game";
 import type { Contract } from "./types";
 
-const PAY_PER_TROOP = 2;
+const PAY_PER_TROOP = 3;
 const LOAN_VALUE = 10;
 
 export interface PaymentPhaseOptions {

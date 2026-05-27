@@ -99,6 +99,8 @@ export interface RunSimulationsOptions {
   playerCount?: number;
   aiDepotChoiceStrategy?: "random" | "one-turn-rollout";
   aiDepotRolloutTrials?: number;
+  aiDraftStrategy?: "random" | "heuristic" | "one-round-rollout";
+  aiDraftRolloutTrials?: number;
 }
 
 function createAggregate(): Record<Rank, AggregateRow> {
@@ -169,6 +171,8 @@ function playGame(
   guardLimit = 1000,
   aiDepotChoiceStrategy: "random" | "one-turn-rollout" = "one-turn-rollout",
   aiDepotRolloutTrials = 24,
+  aiDraftStrategy: "random" | "heuristic" | "one-round-rollout" = "heuristic",
+  aiDraftRolloutTrials = 24,
 ): GameSimulationResult {
   let state = startGame({
     playerCount,
@@ -190,7 +194,10 @@ function playGame(
         state = beginRoundRoleSelection(state, roles);
       }
     } else if (Object.keys(state.currentRoundContractsDraftedByPlayer).length === 0) {
-      state = runContractSelectionPhase(state);
+      state = runContractSelectionPhase(state, {
+        aiDraftStrategy,
+        aiDraftRolloutTrials,
+      });
     } else if (Object.keys(state.currentRoundMusterDiceByPlayer).length === 0) {
       state = runMusterPhase(state, {
         aiDepotChoiceStrategy,
@@ -230,6 +237,8 @@ export function runFinishingPositionSimulations(
   const playerCount = Math.max(2, Math.min(6, Math.floor(options.playerCount ?? 4)));
   const aiDepotChoiceStrategy = options.aiDepotChoiceStrategy ?? "one-turn-rollout";
   const aiDepotRolloutTrials = Math.max(1, Math.floor(options.aiDepotRolloutTrials ?? 24));
+  const aiDraftStrategy = options.aiDraftStrategy ?? "heuristic";
+  const aiDraftRolloutTrials = Math.max(1, Math.floor(options.aiDraftRolloutTrials ?? 24));
 
   if (playerCount !== 4) {
     throw new Error("Finishing-position simulation currently supports playerCount=4");
@@ -253,6 +262,8 @@ export function runFinishingPositionSimulations(
         guardLimit,
         aiDepotChoiceStrategy,
         aiDepotRolloutTrials,
+        aiDraftStrategy,
+        aiDraftRolloutTrials,
       );
       successful += 1;
       totalRounds += finalState.roundNumber;

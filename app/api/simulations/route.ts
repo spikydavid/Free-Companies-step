@@ -11,6 +11,8 @@ export async function POST(request: Request) {
       playerCount?: number;
       aiDepotChoiceStrategy?: "random" | "one-turn-rollout";
       aiDepotRolloutTrials?: number;
+      aiDraftStrategy?: "random" | "heuristic" | "one-round-rollout";
+      aiDraftRolloutTrials?: number;
     };
 
     const report = runFinishingPositionSimulations({
@@ -20,6 +22,8 @@ export async function POST(request: Request) {
       playerCount: body.playerCount,
       aiDepotChoiceStrategy: body.aiDepotChoiceStrategy,
       aiDepotRolloutTrials: body.aiDepotRolloutTrials,
+      aiDraftStrategy: body.aiDraftStrategy,
+      aiDraftRolloutTrials: body.aiDraftRolloutTrials,
     });
 
     return NextResponse.json(report);
