@@ -65,6 +65,7 @@ export interface FinalScore {
   renownFromTroops: number;
   completedContracts: number;
   crowns: number;
+  equipment: number;
 }
 
 export interface StartGameOptions {
@@ -169,7 +170,7 @@ export function startGame(options: StartGameOptions = {}): StartGameResult {
 
   const players: StartGamePlayer[] = playerKinds.map((kind, index) => {
     const dealtDice = populated.depots[index];
-    if (!dealtDice || dealtDice.length < 4) {
+    if (!dealtDice || dealtDice.length < 3) {
       throw new Error("Not enough dice to deal 4 to each player");
     }
 

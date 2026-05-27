@@ -1,7 +1,7 @@
 import type { StartGameResult } from "./start-game";
 import type { Contract } from "./types";
 
-const PAY_PER_TROOP = 3;
+const PAY_PER_TROOP = 2;
 const LOAN_VALUE = 10;
 
 export interface PaymentPhaseOptions {
@@ -24,13 +24,13 @@ type ContractTierKey = keyof StartGameResult["contractDecks"];
 function drawBlindContract(
   contractDecks: StartGameResult["contractDecks"],
   discardedContractsByTier: StartGameResult["discardedContractsByTier"],
-): Contract {
+): Contract | null {
   const availableTiers = (Object.keys(contractDecks) as ContractTierKey[]).filter(
     (tier) => contractDecks[tier].length > 0 || discardedContractsByTier[tier].length > 0,
   );
 
   if (availableTiers.length === 0) {
-    throw new Error("No contracts available in tiered decks for next round pool");
+    return null;
   }
 
   availableTiers.sort((left, right) => {
@@ -50,10 +50,7 @@ function drawBlindContract(
   }
 
   const contract = contractDecks[tier].shift();
-  if (!contract) {
-    throw new Error(`Failed to draw blind contract from Tier ${tier}`);
-  }
-  return contract;
+  return contract ?? null;
 }
 
 export function runPaymentPhase(
@@ -110,18 +107,18 @@ export function runPaymentPhase(
     let loansTaken = 0;
 
     if (!skippedByPaymaster) {
+      while (player.crowns < player.dice.length * PAY_PER_TROOP) {
+        player.crowns += LOAN_VALUE;
+        player.debt += 1;
+        loansTaken += 1;
+      }
+
       while (player.crowns < player.dice.length * PAY_PER_TROOP && player.dice.length > 0) {
         const disbandedUnit = disbandOneUnit(player, bag);
         if (!disbandedUnit) {
           break;
         }
         disbanded += 1;
-      }
-
-      while (player.crowns < player.dice.length * PAY_PER_TROOP) {
-        player.crowns += LOAN_VALUE;
-        player.debt += 1;
-        loansTaken += 1;
       }
     }
 
@@ -151,10 +148,14 @@ export function runPaymentPhase(
         throw new Error(`Unknown player in action order: ${playerId}`);
       }
 
-      nextRoundContractPool.push(
-        drawBlindContract(contractDecks, discardedContractsByTier),
-        drawBlindContract(contractDecks, discardedContractsByTier),
-      );
+      const first = drawBlindContract(contractDecks, discardedContractsByTier);
+      const second = drawBlindContract(contractDecks, discardedContractsByTier);
+      if (first) {
+        nextRoundContractPool.push(first);
+      }
+      if (second) {
+        nextRoundContractPool.push(second);
+      }
     }
   }
 

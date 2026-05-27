@@ -1,6 +1,6 @@
 import type { TroopDie } from "./bag";
 
-const DICE_PER_DEPOT = 4;
+const DICE_PER_DEPOT = 3;
 
 export interface PopulatedDepotsResult {
   depots: TroopDie[][];

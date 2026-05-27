@@ -87,6 +87,7 @@ export function computeFinalScores(game: StartGameResult): {
         renownFromTroops,
         completedContracts: player.completedContracts.length,
         crowns: player.crowns,
+        equipment: game.equipment.byPlayer[player.id] ?? 0,
       } satisfies FinalScore;
     })
     .sort((left, right) => {

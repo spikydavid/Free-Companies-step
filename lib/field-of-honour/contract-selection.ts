@@ -50,28 +50,25 @@ function drawFromTier(
   discardedContractsByTier: StartGameResult["discardedContractsByTier"],
   tier: ContractTierKey,
   random: () => number,
-): Contract {
+): Contract | null {
   refillTierDeckIfNeeded(contractDecks, discardedContractsByTier, tier, random);
 
   const drawn = contractDecks[tier].shift();
-  if (!drawn) {
-    throw new Error(`No contracts available in Tier ${tier}`);
-  }
-  return drawn;
+  return drawn ?? null;
 }
 
 function drawFromAnyTier(
   contractDecks: StartGameResult["contractDecks"],
   discardedContractsByTier: StartGameResult["discardedContractsByTier"],
   random: () => number,
-): Contract {
+): Contract | null {
   const availableTiers: ContractTierKey[] = ["A", "B", "C"].filter((tier) => {
     const key = tier as ContractTierKey;
     return contractDecks[key].length > 0 || discardedContractsByTier[key].length > 0;
   }) as ContractTierKey[];
 
   if (availableTiers.length === 0) {
-    throw new Error("No contracts available in any tier deck");
+    return null;
   }
 
   const selectedTier = availableTiers[Math.floor(random() * availableTiers.length)] as ContractTierKey;
@@ -116,6 +113,7 @@ export function runContractSelectionPhase(
     contract,
   }));
   const hasPreparedPool = draftPool.length > 0;
+  const targetPoolSize = game.players.length * 2;
 
   if (!hasPreparedPool) {
     for (const playerId of game.currentRoundActionOrder) {
@@ -138,7 +136,20 @@ export function runContractSelectionPhase(
 
       const first = drawFromAnyTier(contractDecks, discardedContractsByTier, random);
       const second = drawFromAnyTier(contractDecks, discardedContractsByTier, random);
-      draftPool.push({ contract: first }, { contract: second });
+      if (first) {
+        draftPool.push({ contract: first });
+      }
+      if (second) {
+        draftPool.push({ contract: second });
+      }
+    }
+  } else {
+    while (draftPool.length < targetPoolSize) {
+      const next = drawFromAnyTier(contractDecks, discardedContractsByTier, random);
+      if (!next) {
+        break;
+      }
+      draftPool.push({ contract: next });
     }
   }
 
@@ -149,10 +160,12 @@ export function runContractSelectionPhase(
 
     const restrictedA = drawFromTier(contractDecks, discardedContractsByTier, "A", random);
     const restrictedB = drawFromTier(contractDecks, discardedContractsByTier, "B", random);
-    draftPool.push(
-      { contract: restrictedA, restrictedToPlayerId: playerId },
-      { contract: restrictedB, restrictedToPlayerId: playerId },
-    );
+    if (restrictedA) {
+      draftPool.push({ contract: restrictedA, restrictedToPlayerId: playerId });
+    }
+    if (restrictedB) {
+      draftPool.push({ contract: restrictedB, restrictedToPlayerId: playerId });
+    }
   }
 
   const draftedByPlayer: Record<string, Contract[]> = Object.fromEntries(
@@ -174,7 +187,7 @@ export function runContractSelectionPhase(
         .map(({ idx }) => idx);
 
       if (eligibleIndices.length === 0) {
-        throw new Error(`${playerId} has no eligible contracts to draft`);
+        continue;
       }
 
       const maybeHumanDraftPicks = options.humanDraftSelectionsByPlayer?.[playerId];

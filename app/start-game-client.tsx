@@ -24,17 +24,201 @@ interface StartGameClientProps {
   contracts: Contract[];
 }
 
+interface SimulationPositionRow {
+  rank: "1st" | "2nd" | "3rd" | "4th";
+  samples: number;
+  avgTotalRenown: number;
+  avgRenownFromContracts: number;
+  avgRenownFromSets: number;
+  avgRenownFromAwards: number;
+  avgRenownFromTroops: number;
+  avgCompletedContracts: number;
+  avgCrowns: number;
+  avgEquipment: number;
+}
+
+interface SimulationPlayerTurnRow {
+  turn: number;
+  samples: number;
+  avgTroops: number;
+  avgCrowns: number;
+  avgEquipment: number;
+  avgCompletedContracts: number;
+}
+
+interface SimulationPlayerTurnTracking {
+  playerId: string;
+  turns: SimulationPlayerTurnRow[];
+}
+
+type TrackerMetricKey =
+  | "avgTroops"
+  | "avgCrowns"
+  | "avgEquipment"
+  | "avgCompletedContracts";
+
+interface TrackerMetricConfig {
+  key: TrackerMetricKey;
+  label: string;
+  colorClassName: string;
+}
+
+const TRACKER_METRICS: TrackerMetricConfig[] = [
+  {
+    key: "avgTroops",
+    label: "Troops",
+    colorClassName: "text-blue-600",
+  },
+  {
+    key: "avgCrowns",
+    label: "Crowns",
+    colorClassName: "text-amber-600",
+  },
+  {
+    key: "avgEquipment",
+    label: "Equipment",
+    colorClassName: "text-emerald-600",
+  },
+  {
+    key: "avgCompletedContracts",
+    label: "Completed Contracts",
+    colorClassName: "text-rose-600",
+  },
+];
+
+const CHART_WIDTH = 640;
+const CHART_HEIGHT = 100;
+
+interface CombinedTurnAverageRow {
+  turn: number;
+  samples: number;
+  avgTroops: number;
+  avgCrowns: number;
+  avgEquipment: number;
+  avgCompletedContracts: number;
+}
+
+function toChartPoints(values: number[], maxValue: number): string {
+  if (values.length === 0) {
+    return "";
+  }
+
+  if (values.length === 1) {
+    const y = CHART_HEIGHT - CHART_HEIGHT / 2;
+    return `0,${y}`;
+  }
+
+  const safeMaxValue = Math.max(1, maxValue);
+  const stepX = CHART_WIDTH / (values.length - 1);
+
+  return values
+    .map((value, index) => {
+      const x = stepX * index;
+      const normalized = value / safeMaxValue;
+      const y = CHART_HEIGHT - normalized * CHART_HEIGHT;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function buildCombinedTurnAverages(
+  tracking: SimulationPlayerTurnTracking[],
+): CombinedTurnAverageRow[] {
+  const byTurn = new Map<
+    number,
+    {
+      sampleWeight: number;
+      troopsTotal: number;
+      crownsTotal: number;
+      equipmentTotal: number;
+      completedContractsTotal: number;
+    }
+  >();
+
+  for (const playerTracking of tracking) {
+    for (const row of playerTracking.turns) {
+      const sampleWeight = Math.max(1, row.samples);
+      const existing = byTurn.get(row.turn) ?? {
+        sampleWeight: 0,
+        troopsTotal: 0,
+        crownsTotal: 0,
+        equipmentTotal: 0,
+        completedContractsTotal: 0,
+      };
+
+      existing.sampleWeight += sampleWeight;
+      existing.troopsTotal += row.avgTroops * sampleWeight;
+      existing.crownsTotal += row.avgCrowns * sampleWeight;
+      existing.equipmentTotal += row.avgEquipment * sampleWeight;
+      existing.completedContractsTotal += row.avgCompletedContracts * sampleWeight;
+
+      byTurn.set(row.turn, existing);
+    }
+  }
+
+  return Array.from(byTurn.entries())
+    .sort(([turnA], [turnB]) => turnA - turnB)
+    .map(([turn, totals]) => {
+      const divisor = Math.max(1, totals.sampleWeight);
+      return {
+        turn,
+        samples: totals.sampleWeight,
+        avgTroops: totals.troopsTotal / divisor,
+        avgCrowns: totals.crownsTotal / divisor,
+        avgEquipment: totals.equipmentTotal / divisor,
+        avgCompletedContracts: totals.completedContractsTotal / divisor,
+      };
+    });
+}
+
+interface SimulationReport {
+  successfulSimulations: number;
+  totalAttempts: number;
+  averageRounds: number | null;
+  byFinishingPosition: SimulationPositionRow[];
+  perPlayerTurnTracking: SimulationPlayerTurnTracking[];
+  failureMessages: Record<string, number>;
+}
+
 export function StartGameClient({ contracts }: StartGameClientProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerKinds, setPlayerKinds] = useState<PlayerKind[]>(createDefaultPlayerKinds(4));
   const [started, setStarted] = useState<StartGameResult | null>(null);
   const [roundRoleChoices, setRoundRoleChoices] = useState<Record<string, RoleCard>>({});
   const [error, setError] = useState<string | null>(null);
+  const [simulationReport, setSimulationReport] = useState<SimulationReport | null>(null);
+  const [simulationLoading, setSimulationLoading] = useState(false);
 
   const roleEntries = useMemo(
     () => Object.entries(ROLE_PRIORITY).sort((a, b) => a[1] - b[1]),
     [],
   );
+
+  const combinedTurnAverages = useMemo(
+    () =>
+      simulationReport
+        ? buildCombinedTurnAverages(simulationReport.perPlayerTurnTracking)
+        : [],
+    [simulationReport],
+  );
+
+  const combinedMaxValue = useMemo(() => {
+    if (combinedTurnAverages.length === 0) {
+      return 1;
+    }
+
+    let maxValue = 1;
+    for (const row of combinedTurnAverages) {
+      maxValue = Math.max(
+        maxValue,
+        row.avgTroops,
+        row.avgCrowns,
+        row.avgEquipment,
+        row.avgCompletedContracts,
+      );
+    }
+    return maxValue;
+  }, [combinedTurnAverages]);
 
   useEffect(() => {
     if (!started) {
@@ -141,6 +325,31 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
       ...prev,
       [playerId]: role,
     }));
+  }
+
+  async function onRunSimulations() {
+    setError(null);
+    setSimulationLoading(true);
+    try {
+      const response = await fetch("/api/simulations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sims: 1000, playerCount: 4 }),
+      });
+
+      const payload = (await response.json()) as SimulationReport | { error?: string };
+      if (!response.ok || !("successfulSimulations" in payload)) {
+        throw new Error((payload as { error?: string }).error ?? "Simulation request failed");
+      }
+
+      setSimulationReport(payload);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "Failed to run simulations");
+    } finally {
+      setSimulationLoading(false);
+    }
   }
 
   function onBeginRound() {
@@ -499,7 +708,7 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
                 <ul className="mt-1 list-inside list-disc space-y-1 text-xs text-zinc-700">
                   {started.finalScores.map((score) => (
                     <li key={`score-${score.playerId}`}>
-                      {score.playerId}: total {score.totalRenown} (contracts {score.renownFromContracts}, sets {score.renownFromSets}, awards {score.renownFromAwards}, troops {score.renownFromTroops})
+                      {score.playerId}: total {score.totalRenown} (contracts {score.renownFromContracts}, sets {score.renownFromSets}, awards {score.renownFromAwards}, troops {score.renownFromTroops}) | completed {score.completedContracts}, crowns {score.crowns}, equipment {score.equipment}
                     </li>
                   ))}
                 </ul>
@@ -550,6 +759,108 @@ export function StartGameClient({ contracts }: StartGameClientProps) {
             </li>
           ))}
         </ol>
+      </section>
+
+      <section className="rounded-2xl border border-zinc-300 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Simulation Runner</h2>
+        <p className="mt-2 text-sm text-zinc-700">
+          Run 1,000 AI-only games and aggregate averages by finishing position.
+        </p>
+        <button
+          onClick={onRunSimulations}
+          disabled={simulationLoading}
+          className="mt-3 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {simulationLoading ? "Running Simulations..." : "Run 1000 Simulations"}
+        </button>
+
+        {simulationReport ? (
+          <div className="mt-4 rounded-md border border-zinc-300 bg-zinc-50 p-3 text-xs text-zinc-800">
+            <p>
+              Completed: {simulationReport.successfulSimulations} / Attempts: {simulationReport.totalAttempts} / Average rounds: {simulationReport.averageRounds?.toFixed(3) ?? "-"}
+            </p>
+            <ul className="mt-2 list-inside list-disc space-y-1">
+              {simulationReport.byFinishingPosition.map((row) => (
+                <li key={`sim-${row.rank}`}>
+                  {row.rank}: total {row.avgTotalRenown.toFixed(3)} (contracts {row.avgRenownFromContracts.toFixed(3)}, sets {row.avgRenownFromSets.toFixed(3)}, awards {row.avgRenownFromAwards.toFixed(3)}, troops {row.avgRenownFromTroops.toFixed(3)}) | completed {row.avgCompletedContracts.toFixed(3)}, crowns {row.avgCrowns.toFixed(3)}, equipment {row.avgEquipment.toFixed(3)}
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-3 rounded-md border border-zinc-300 bg-white p-3">
+              <p className="text-xs font-semibold text-zinc-700">
+                Combined turn tracking (average of all players by round)
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-600">
+                Each point is the round-level average across all players that reached that round.
+              </p>
+
+              <svg
+                viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+                className="mt-2 h-28 w-full rounded border border-zinc-200 bg-zinc-50"
+                aria-label="Combined all-player round trends"
+              >
+                <line
+                  x1="0"
+                  y1={CHART_HEIGHT}
+                  x2={CHART_WIDTH}
+                  y2={CHART_HEIGHT}
+                  stroke="currentColor"
+                  className="text-zinc-300"
+                />
+                {TRACKER_METRICS.map((metric) => {
+                  const values = combinedTurnAverages.map((turnRow) => turnRow[metric.key]);
+                  const points = toChartPoints(values, combinedMaxValue);
+
+                  return (
+                    <polyline
+                      key={`sim-combined-chart-${metric.key}`}
+                      fill="none"
+                      points={points}
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className={metric.colorClassName}
+                    />
+                  );
+                })}
+              </svg>
+
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                {TRACKER_METRICS.map((metric) => (
+                  <span key={`sim-legend-${metric.key}`} className={metric.colorClassName}>
+                    {metric.label}
+                  </span>
+                ))}
+              </div>
+
+              <details className="mt-2 rounded border border-zinc-200 bg-zinc-50 px-2 py-1">
+                <summary className="cursor-pointer text-[11px] text-zinc-700">
+                  View combined round table
+                </summary>
+                <ul className="mt-1 list-inside list-disc space-y-1 text-[11px] text-zinc-700">
+                  {combinedTurnAverages.map((turnRow) => (
+                    <li key={`sim-combined-turn-row-${turnRow.turn}`}>
+                      Round {turnRow.turn} ({turnRow.samples} weighted samples): troops {turnRow.avgTroops.toFixed(3)}, crowns {turnRow.avgCrowns.toFixed(3)}, equipment {turnRow.avgEquipment.toFixed(3)}, completed contracts {turnRow.avgCompletedContracts.toFixed(3)}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+
+            {Object.keys(simulationReport.failureMessages).length > 0 ? (
+              <div className="mt-2">
+                <p>Failures:</p>
+                <ul className="list-inside list-disc">
+                  {Object.entries(simulationReport.failureMessages).map(([message, count]) => (
+                    <li key={`sim-fail-${message}`}>
+                      {message}: {count}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </main>
   );

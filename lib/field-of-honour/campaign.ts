@@ -317,6 +317,14 @@ function toTroopDie(die: BattleDie): TroopDie {
   };
 }
 
+function contractTierKey(contract: Contract): keyof StartGameResult["discardedContractsByTier"] {
+  if (contract.tier === "A" || contract.tier === "B" || contract.tier === "C") {
+    return contract.tier;
+  }
+
+  throw new Error(`Unsupported contract tier for discard recycling: ${contract.tier}`);
+}
+
 function claimAwardsAfterCampaign(
   game: StartGameResult,
   updatedPlayers: StartGameResult["players"],
@@ -413,6 +421,11 @@ export function runCampaignPhase(
 
   let equipment = game.equipment;
   const bag = [...game.bag];
+  const discardedContractsByTier = {
+    A: [...game.discardedContractsByTier.A],
+    B: [...game.discardedContractsByTier.B],
+    C: [...game.discardedContractsByTier.C],
+  };
 
   const updatedPlayers = game.players.map((player) => ({
     ...player,
@@ -513,6 +526,7 @@ export function runCampaignPhase(
         player.renown += contract.rewardRenown;
       } else {
         player.discardedContracts.push(contract);
+        discardedContractsByTier[contractTierKey(contract)].push(contract);
       }
 
       resolvedContracts.push({
@@ -551,6 +565,7 @@ export function runCampaignPhase(
     players: updatedPlayers,
     equipment,
     bag,
+    discardedContractsByTier,
     currentRoundCampaignContractsByPlayer: campaignContractsByPlayer,
     currentRoundCampaignResolutionByPlayer: campaignResolutionByPlayer,
     awardsWonByPlayer,
